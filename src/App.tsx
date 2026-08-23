@@ -93,9 +93,60 @@ export default function App() {
       console.error('Failed to save history', e);
     }
 
-    // Auto sync to backend DB / Google Sheets Webhook
+    // Auto sync to Google Sheets Webhook (Direct no-cors) & optional local server
     try {
-      const savedWebhook = localStorage.getItem('aiworks_google_sheet_webhook_url') || '';
+      const savedWebhook = (localStorage.getItem('aiworks_google_sheet_webhook_url') || '').trim();
+      if (savedWebhook) {
+        const textSummary = `[AIWORKS 기업 AX 간이진단 결과]
+회사명: ${res.companyName}
+진단일: ${res.savedAt}
+작성자: ${res.evaluatorName} (${res.evaluatorRole})
+이메일: ${targetEmail.trim()}
+총점: ${res.totalScore}점 / 100 (Level ${res.level.levelNumber}. ${res.level.title})
+1순위 과제: ${res.priorityTasks.task1.title}
+2순위 과제: ${res.priorityTasks.task2.title}
+3순위 과제: ${res.priorityTasks.task3.title}
+`;
+        const webhookPayload = {
+          eventType: 'ax_diagnosis_submitted',
+          id: res.id,
+          timestamp: res.savedAt || new Date().toISOString(),
+          companyName: res.companyName,
+          evaluatorName: res.evaluatorName,
+          evaluatorRole: res.evaluatorRole,
+          targetEmail: targetEmail.trim(),
+          employeeCount: res.employeeCount,
+          currentAiUsage: res.currentAiUsage,
+          levelNumber: res.level?.levelNumber,
+          levelTitle: res.level?.title,
+          totalScore: res.totalScore,
+          totalRawScore: res.totalRawScore,
+          score_aiUsage: res.categoryScores?.aiUsage?.convertedScore,
+          score_workProcess: res.categoryScores?.workProcess?.convertedScore,
+          score_knowledge: res.categoryScores?.knowledgeManagement?.convertedScore,
+          score_automation: res.categoryScores?.automation?.convertedScore,
+          score_security: res.categoryScores?.verificationSecurity?.convertedScore,
+          strongestDomain: res.strongestDomain?.title,
+          bottleneckDomain: res.bottleneckDomain?.title,
+          task1_title: res.priorityTasks?.task1?.title,
+          task2_title: res.priorityTasks?.task2?.title,
+          task3_title: res.priorityTasks?.task3?.title,
+          q19_timeWaster: res.freeAnswers?.q19_timeWaster,
+          q20_topPriority: res.freeAnswers?.q20_topPriority,
+          triggeredRisks: (res.triggeredRisks || []).map((r: any) => r.title).join(', '),
+          textSummary,
+          fullJsonData: JSON.stringify(res),
+        };
+
+        fetch(savedWebhook, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(webhookPayload),
+        }).catch((err) => console.warn('Direct Google Webhook submit warning:', err));
+      }
+
+      // Optional local backend DB sync
       fetch('/api/sync-result', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -104,7 +155,7 @@ export default function App() {
           targetEmail: targetEmail.trim(),
           webhookUrl: savedWebhook,
         }),
-      }).catch((err) => console.warn('Auto sync warning:', err));
+      }).catch(() => {});
     } catch (e) {
       // ignore
     }

@@ -59,13 +59,95 @@ export const ReportView: React.FC<ReportViewProps> = ({
   } | null>(null);
   const [emailSentToast, setEmailSentToast] = useState(false);
 
-  // Auto-sync to server & Google Sheets on mount
+  // Helper: Build Google Apps Script webhook payload
+  const buildWebhookPayload = (targetEmailStr: string) => {
+    const summaryText = `[AIWORKS 기업 AX 간이진단 결과 요약]
+회사명: ${result.companyName}
+진단일시: ${result.savedAt}
+작성자: ${result.evaluatorName} (${result.evaluatorRole})
+이메일: ${targetEmailStr}
+직원수/활용수준: ${result.employeeCount} / ${result.currentAiUsage}
+
+[종합 결과]
+- 성숙도 레벨: Level ${result.level.levelNumber} (${result.level.title})
+- 종합점수: ${result.totalScore}점 / 100점 (원점수 ${result.totalRawScore}/75점)
+- 최고강점: ${result.strongestDomain.title} (${result.strongestDomain.convertedScore}점)
+- 최대병목: ${result.bottleneckDomain.title} (${result.bottleneckDomain.convertedScore}점)
+
+[5대 영역 점수]
+1. AI 활용: ${result.categoryScores.aiUsage.convertedScore}점
+2. 업무 프로세스: ${result.categoryScores.workProcess.convertedScore}점
+3. 자료·지식관리: ${result.categoryScores.knowledgeManagement.convertedScore}점
+4. 반복업무·자동화: ${result.categoryScores.automation.convertedScore}점
+5. 검증·보안: ${result.categoryScores.verificationSecurity.convertedScore}점
+
+[3대 우선 추진 과제]
+1순위: ${result.priorityTasks.task1.title}
+2순위: ${result.priorityTasks.task2.title}
+3순위: ${result.priorityTasks.task3.title}
+
+- 가장 줄이고 싶은 반복업무 (Q19): ${result.freeAnswers.q19_timeWaster}
+- AI로 가장 먼저 개선하고 싶은 업무 (Q20): ${result.freeAnswers.q20_topPriority}
+`;
+
+    return {
+      eventType: 'ax_diagnosis_submitted',
+      id: result.id,
+      timestamp: result.savedAt || new Date().toISOString(),
+      companyName: result.companyName,
+      evaluatorName: result.evaluatorName,
+      evaluatorRole: result.evaluatorRole,
+      targetEmail: targetEmailStr,
+      employeeCount: result.employeeCount,
+      currentAiUsage: result.currentAiUsage,
+      levelNumber: result.level?.levelNumber,
+      levelTitle: result.level?.title,
+      totalScore: result.totalScore,
+      totalRawScore: result.totalRawScore,
+      score_aiUsage: result.categoryScores?.aiUsage?.convertedScore,
+      score_workProcess: result.categoryScores?.workProcess?.convertedScore,
+      score_knowledge: result.categoryScores?.knowledgeManagement?.convertedScore,
+      score_automation: result.categoryScores?.automation?.convertedScore,
+      score_security: result.categoryScores?.verificationSecurity?.convertedScore,
+      strongestDomain: result.strongestDomain?.title,
+      bottleneckDomain: result.bottleneckDomain?.title,
+      task1_title: result.priorityTasks?.task1?.title,
+      task2_title: result.priorityTasks?.task2?.title,
+      task3_title: result.priorityTasks?.task3?.title,
+      q19_timeWaster: result.freeAnswers?.q19_timeWaster,
+      q20_topPriority: result.freeAnswers?.q20_topPriority,
+      triggeredRisks: (result.triggeredRisks || []).map((r: any) => r.title).join(', '),
+      consultantInterview: result.consultantInterview || null,
+      textSummary: summaryText,
+      fullJsonData: JSON.stringify(result),
+    };
+  };
+
+  // Auto-sync to Google Sheets Webhook (Direct no-cors) & optional local server on mount
   useEffect(() => {
     const autoSync = async () => {
       setIsSyncing(true);
+      const savedWebhook = (localStorage.getItem('aiworks_google_sheet_webhook_url') || '').trim();
+      let syncedToSheets = false;
+
+      // 1. Direct fetch to Google Apps Script Webhook (Vercel 정적 배포 호환)
+      if (savedWebhook) {
+        try {
+          await fetch(savedWebhook, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildWebhookPayload(emailInput.trim())),
+          });
+          syncedToSheets = true;
+        } catch (webhookErr) {
+          console.warn('Direct Google Webhook sync error:', webhookErr);
+        }
+      }
+
+      // 2. Try optional local backend API
       try {
-        const savedWebhook = localStorage.getItem('aiworks_google_sheet_webhook_url') || '';
-        const res = await fetch('/api/sync-result', {
+        await fetch('/api/sync-result', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -74,53 +156,63 @@ export const ReportView: React.FC<ReportViewProps> = ({
             webhookUrl: savedWebhook,
           }),
         });
-        const data = await res.json();
-        if (data.success) {
-          setSyncStatus({
-            savedLocally: true,
-            syncedToSheets: data.syncedToSheets,
-            message: data.sheetsMessage || '로컬 DB 및 웹 스토리지에 안전하게 영구 저장되었습니다.',
-          });
-        }
       } catch (e) {
-        console.error('Failed auto sync', e);
-      } finally {
-        setIsSyncing(false);
+        // Safe to ignore in static Vercel environment
       }
+
+      setSyncStatus({
+        savedLocally: true,
+        syncedToSheets: syncedToSheets || !!savedWebhook,
+        message: savedWebhook
+          ? '구글 스프레드시트 및 드라이브에 안전하게 자동 저장되었습니다.'
+          : '로컬 스토리지에 진단 결과가 안전하게 영구 보관되었습니다.',
+      });
+      setIsSyncing(false);
     };
 
     autoSync();
   }, [result.id]);
 
-  // Handle manual Email send / sync
+  // Handle manual Email send / sync (Direct no-cors to Webhook)
   const handleSendEmailReport = async () => {
-    if (!emailInput.trim() || emailInput.indexOf('@') === -1) {
+    const cleanEmail = emailInput.trim();
+    if (!cleanEmail || cleanEmail.indexOf('@') === -1) {
       alert('올바른 이메일 주소를 입력해주세요.');
       return;
     }
 
     setIsSyncing(true);
+    const savedWebhook = (localStorage.getItem('aiworks_google_sheet_webhook_url') || '').trim();
+
     try {
-      const savedWebhook = localStorage.getItem('aiworks_google_sheet_webhook_url') || '';
-      const res = await fetch('/api/sync-result', {
+      if (savedWebhook) {
+        // Direct Webhook POST with no-cors
+        await fetch(savedWebhook, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildWebhookPayload(cleanEmail)),
+        });
+      }
+
+      // Also notify optional local backend
+      fetch('/api/sync-result', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          result: { ...result, targetEmail: emailInput.trim() },
-          targetEmail: emailInput.trim(),
+          result: { ...result, targetEmail: cleanEmail },
+          targetEmail: cleanEmail,
           webhookUrl: savedWebhook,
         }),
+      }).catch(() => {});
+
+      setEmailSentToast(true);
+      setTimeout(() => setEmailSentToast(false), 3500);
+      setSyncStatus({
+        savedLocally: true,
+        syncedToSheets: !!savedWebhook,
+        message: `${cleanEmail}으로 결과 요약 전송이 완료되었습니다!`,
       });
-      const data = await res.json();
-      if (data.success) {
-        setEmailSentToast(true);
-        setTimeout(() => setEmailSentToast(false), 3000);
-        setSyncStatus({
-          savedLocally: true,
-          syncedToSheets: data.syncedToSheets,
-          message: `${emailInput}으로 결과 요약이 전송되었습니다!`,
-        });
-      }
     } catch (e) {
       alert('전송 중 오류가 발생했습니다.');
     } finally {

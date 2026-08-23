@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Database,
@@ -55,7 +55,8 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   };
 
   const handleTestWebhook = async () => {
-    if (!webhookUrl.trim()) {
+    const cleanUrl = webhookUrl.trim();
+    if (!cleanUrl) {
       setTestResult({ success: false, message: "Webhook URL을 먼저 입력해주세요." });
       return;
     }
@@ -63,29 +64,33 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
     setIsTesting(true);
     setTestResult(null);
 
+    const testPayload = {
+      eventType: "test_connection",
+      timestamp: new Date().toISOString(),
+      companyName: "AIWORKS 테스트 기업",
+      evaluatorName: "시스템 관리자",
+      totalScore: 85,
+      levelTitle: "Level 4. 시스템 내재화",
+      textSummary: "[AIWORKS] 구글 시트 및 구글 드라이브 웹훅 연동 테스트 성공",
+    };
+
     try {
-      const res = await fetch("/api/test-webhook", {
+      // Vercel 정적 배포 및 브라우저 환경에서 Google Apps Script Webhook URL로 직접 POST (no-cors)
+      await fetch(cleanUrl, {
         method: "POST",
+        mode: "no-cors",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webhookUrl: webhookUrl.trim() }),
+        body: JSON.stringify(testPayload),
       });
 
-      const data = await res.json();
-      if (data.success) {
-        setTestResult({
-          success: true,
-          message: "연동 성공! 구글 시트와 구글 드라이브에 테스트 데이터가 기록되었습니다.",
-        });
-      } else {
-        setTestResult({
-          success: false,
-          message: data.message || "연동 실패: Webhook URL 및 배포 권한을 확인해주세요.",
-        });
-      }
+      setTestResult({
+        success: true,
+        message: "웹훅 전송 성공! 구글 스프레드시트와 구글 드라이브(AIWORKS_AX_진단결과 폴더)에 테스트 데이터가 정상 추가되었는지 확인해보세요.",
+      });
     } catch (err: any) {
       setTestResult({
         success: false,
-        message: `테스트 요청 중 오류: ${err?.message || "서버 통신 실패"}`,
+        message: `테스트 요청 중 오류: ${err?.message || "네트워크 통신 실패"}`,
       });
     } finally {
       setIsTesting(false);
