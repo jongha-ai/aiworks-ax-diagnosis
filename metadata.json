@@ -1,0 +1,6 @@
+{
+  "name": "AIWORKS 기업 AX 간이진단 v0.1",
+  "description": "우리 회사의 AI 전환(AX) 성숙도, 업무 프로세스, 자료 관리 및 보안 위험을 진단하고 우선 개선 과제와 컨설팅 리포트를 도출하는 간이진단 솔루션",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
