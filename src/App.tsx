@@ -14,6 +14,7 @@ import { HistoryDrawer } from './components/HistoryDrawer';
 import { GoogleSyncModal } from './components/GoogleSyncModal';
 import { calculateDiagnosticResult, SAMPLE_PRESETS } from './utils/axCalculator';
 import { DiagnosticResult, ConsultantInterviewData, PilotFeedbackData } from './types';
+import { getActiveWebhookUrl } from './constants';
 
 const STORAGE_KEY_HISTORY = 'aiworks_ax_diagnostic_history_v01';
 const STORAGE_KEY_DRAFT = 'aiworks_ax_diagnostic_draft_v01';
@@ -95,8 +96,8 @@ export default function App() {
 
     // Auto sync to Google Sheets Webhook (Direct no-cors) & optional local server
     try {
-      const savedWebhook = (localStorage.getItem('aiworks_google_sheet_webhook_url') || '').trim();
-      if (savedWebhook) {
+      const activeWebhook = getActiveWebhookUrl();
+      if (activeWebhook) {
         const textSummary = `[AIWORKS 기업 AX 간이진단 결과]
 회사명: ${res.companyName}
 진단일: ${res.savedAt}
@@ -138,7 +139,7 @@ export default function App() {
           fullJsonData: JSON.stringify(res),
         };
 
-        fetch(savedWebhook, {
+        fetch(activeWebhook, {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
@@ -153,7 +154,7 @@ export default function App() {
         body: JSON.stringify({
           result: res,
           targetEmail: targetEmail.trim(),
-          webhookUrl: savedWebhook,
+          webhookUrl: activeWebhook,
         }),
       }).catch(() => {});
     } catch (e) {

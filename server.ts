@@ -7,6 +7,9 @@ import { GoogleGenAI } from "@google/genai";
 const app = express();
 const PORT = 3000;
 
+const DEFAULT_GOOGLE_SHEET_WEBHOOK_URL =
+  "https://script.google.com/macros/s/AKfycby0qzdlehQQsER8BplqLPiJOZVUzaL4mWEVGIMvaw5jzqAy1iWKM-iF_h32HrmXEZYLlw/exec";
+
 app.use(express.json({ limit: "10mb" }));
 
 // Ensure local persistence directory exists
@@ -170,7 +173,7 @@ app.post("/api/sync-result", async (req, res) => {
     }
 
     // 2) Google Sheets & Drive Webhook forwarder
-    const activeWebhookUrl = clientWebhookUrl || process.env.GOOGLE_SHEET_WEBHOOK_URL;
+    const activeWebhookUrl = clientWebhookUrl || process.env.GOOGLE_SHEET_WEBHOOK_URL || DEFAULT_GOOGLE_SHEET_WEBHOOK_URL;
     let sheetsSyncSuccess = false;
     let sheetsSyncMessage = "";
 

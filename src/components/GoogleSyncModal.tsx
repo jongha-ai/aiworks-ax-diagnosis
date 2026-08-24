@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { GOOGLE_APPS_SCRIPT_CODE } from "../data/googleAppsScriptTemplate";
+import { DEFAULT_GOOGLE_SHEET_WEBHOOK_URL, getActiveWebhookUrl } from "../constants";
 
 interface GoogleSyncModalProps {
   isOpen: boolean;
@@ -34,8 +35,8 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("aiworks_google_sheet_webhook_url") || "";
-    setWebhookUrl(saved);
+    const active = getActiveWebhookUrl();
+    setWebhookUrl(active);
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -47,7 +48,7 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   };
 
   const handleSaveWebhook = () => {
-    const cleanUrl = webhookUrl.trim();
+    const cleanUrl = webhookUrl.trim() || DEFAULT_GOOGLE_SHEET_WEBHOOK_URL;
     localStorage.setItem("aiworks_google_sheet_webhook_url", cleanUrl);
     setSaveSuccess(true);
     if (onSavedWebhook) onSavedWebhook(cleanUrl);
@@ -55,9 +56,9 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
   };
 
   const handleTestWebhook = async () => {
-    const cleanUrl = webhookUrl.trim();
+    const cleanUrl = webhookUrl.trim() || DEFAULT_GOOGLE_SHEET_WEBHOOK_URL;
     if (!cleanUrl) {
-      setTestResult({ success: false, message: "Webhook URL을 먼저 입력해주세요." });
+      setTestResult({ success: false, message: "Webhook URL을 입력해주세요." });
       return;
     }
 

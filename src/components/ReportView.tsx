@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { DiagnosticResult, CategoryScore } from '../types';
 import { JoCodingAuroraBg } from './JoCodingAuroraBg';
+import { getActiveWebhookUrl } from '../constants';
 
 interface ReportViewProps {
   result: DiagnosticResult;
@@ -127,13 +128,13 @@ export const ReportView: React.FC<ReportViewProps> = ({
   useEffect(() => {
     const autoSync = async () => {
       setIsSyncing(true);
-      const savedWebhook = (localStorage.getItem('aiworks_google_sheet_webhook_url') || '').trim();
+      const activeWebhook = getActiveWebhookUrl();
       let syncedToSheets = false;
 
       // 1. Direct fetch to Google Apps Script Webhook (Vercel 정적 배포 호환)
-      if (savedWebhook) {
+      if (activeWebhook) {
         try {
-          await fetch(savedWebhook, {
+          await fetch(activeWebhook, {
             method: 'POST',
             mode: 'no-cors',
             headers: { 'Content-Type': 'application/json' },
@@ -153,7 +154,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
           body: JSON.stringify({
             result,
             targetEmail: emailInput.trim(),
-            webhookUrl: savedWebhook,
+            webhookUrl: activeWebhook,
           }),
         });
       } catch (e) {
@@ -162,8 +163,8 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
       setSyncStatus({
         savedLocally: true,
-        syncedToSheets: syncedToSheets || !!savedWebhook,
-        message: savedWebhook
+        syncedToSheets: syncedToSheets || !!activeWebhook,
+        message: activeWebhook
           ? '구글 스프레드시트 및 드라이브에 안전하게 자동 저장되었습니다.'
           : '로컬 스토리지에 진단 결과가 안전하게 영구 보관되었습니다.',
       });
@@ -182,12 +183,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
     }
 
     setIsSyncing(true);
-    const savedWebhook = (localStorage.getItem('aiworks_google_sheet_webhook_url') || '').trim();
+    const activeWebhook = getActiveWebhookUrl();
 
     try {
-      if (savedWebhook) {
+      if (activeWebhook) {
         // Direct Webhook POST with no-cors
-        await fetch(savedWebhook, {
+        await fetch(activeWebhook, {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
@@ -202,7 +203,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
         body: JSON.stringify({
           result: { ...result, targetEmail: cleanEmail },
           targetEmail: cleanEmail,
-          webhookUrl: savedWebhook,
+          webhookUrl: activeWebhook,
         }),
       }).catch(() => {});
 
@@ -210,7 +211,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
       setTimeout(() => setEmailSentToast(false), 3500);
       setSyncStatus({
         savedLocally: true,
-        syncedToSheets: !!savedWebhook,
+        syncedToSheets: !!activeWebhook,
         message: `${cleanEmail}으로 결과 요약 전송이 완료되었습니다!`,
       });
     } catch (e) {
