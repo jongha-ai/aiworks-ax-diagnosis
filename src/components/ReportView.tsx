@@ -26,8 +26,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { DiagnosticResult, CategoryScore } from '../types';
+import { getActiveWebhookUrl, postDiagnosticToWebhook } from '../constants';
 import { JoCodingAuroraBg } from './JoCodingAuroraBg';
-import { getActiveWebhookUrl } from '../constants';
 
 interface ReportViewProps {
   result: DiagnosticResult;
@@ -124,25 +124,24 @@ export const ReportView: React.FC<ReportViewProps> = ({
     };
   };
 
-  // Auto-sync to Google Sheets Webhook (Direct no-cors) & optional local server on mount
+  // Auto-sync to Google Sheets Webhook (with response verification) & optional local server on mount
   useEffect(() => {
     const autoSync = async () => {
       setIsSyncing(true);
       const activeWebhook = getActiveWebhookUrl();
       let syncedToSheets = false;
+      let syncDetail = '';
 
       // 1. Direct fetch to Google Apps Script Webhook (Vercel 정적 배포 호환)
       if (activeWebhook) {
-        try {
-          await fetch(activeWebhook, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildWebhookPayload(emailInput.trim())),
-          });
-          syncedToSheets = true;
-        } catch (webhookErr) {
-          console.warn('Direct Google Webhook sync error:', webhookErr);
+        const webhookResult = await postDiagnosticToWebhook(
+          activeWebhook,
+          buildWebhookPayload(emailInput.trim())
+        );
+        syncedToSheets = webhookResult.ok;
+        syncDetail = webhookResult.detail;
+        if (!webhookResult.ok) {
+          console.warn('Direct Google Webhook sync failed:', webhookResult.detail);
         }
       }
 
@@ -163,9 +162,11 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
       setSyncStatus({
         savedLocally: true,
-        syncedToSheets: syncedToSheets || !!activeWebhook,
+        syncedToSheets,
         message: activeWebhook
-          ? '구글 스프레드시트 및 드라이브에 안전하게 자동 저장되었습니다.'
+          ? syncedToSheets
+            ? '구글 스프레드시트 및 드라이브에 안전하게 자동 저장되었습니다.'
+            : `자동 저장 실패: ${syncDetail}`
           : '로컬 스토리지에 진단 결과가 안전하게 영구 보관되었습니다.',
       });
       setIsSyncing(false);
@@ -174,7 +175,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
     autoSync();
   }, [result.id]);
 
-  // Handle manual Email send / sync (Direct no-cors to Webhook)
+  // Handle manual Email send / sync (Direct to Webhook WITH response verification)
   const handleSendEmailReport = async () => {
     const cleanEmail = emailInput.trim();
     if (!cleanEmail || cleanEmail.indexOf('@') === -1) {
@@ -186,26 +187,36 @@ export const ReportView: React.FC<ReportViewProps> = ({
     const activeWebhook = getActiveWebhookUrl();
 
     try {
+      // Verify actual Google Apps Script response before showing success
+      let webhookOk = true;
       if (activeWebhook) {
-        // Direct Webhook POST with no-cors
-        await fetch(activeWebhook, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(buildWebhookPayload(cleanEmail)),
-        });
-      }
+        const webhookResult = await postDiagnosticToWebhook(
+          activeWebhook,
+          buildWebhookPayload(cleanEmail)
+        );
+        webhookOk = webhookResult.ok;
 
-      // Also notify optional local backend
-      fetch('/api/sync-result', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          result: { ...result, targetEmail: cleanEmail },
-          targetEmail: cleanEmail,
-          webhookUrl: activeWebhook,
-        }),
-      }).catch(() => {});
+        // Also notify optional local backend
+        fetch('/api/sync-result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            result: { ...result, targetEmail: cleanEmail },
+            targetEmail: cleanEmail,
+            webhookUrl: activeWebhook,
+          }),
+        }).catch(() => {});
+
+        if (!webhookOk) {
+          // Real failure -> show explicit failure instead of success toast
+          setSyncStatus({
+            savedLocally: true,
+            syncedToSheets: false,
+            message: `전송 실패: ${webhookResult.detail} [대상: ${cleanEmail}]`,
+          });
+          return; // finally에서 isSyncing 해제
+        }
+      }
 
       setEmailSentToast(true);
       setTimeout(() => setEmailSentToast(false), 3500);
@@ -467,6 +478,16 @@ ${result.priorityTasks.task3.title}
           <div className="p-2.5 bg-emerald-950/80 border border-emerald-500/50 rounded-xl text-xs text-emerald-200 flex items-center gap-2 animate-in fade-in">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>{emailInput} 주소로 진단 결과 요약이 성공적으로 전송되었습니다!</span>
+          </div>
+        )}
+
+        {syncStatus?.syncedToSheets === false && (
+          <div className="p-2.5 bg-red-950/80 border border-red-500/50 rounded-xl text-xs text-red-200 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+            <span>
+              구글 시트/드라이브 저장·이메일 전송에 실패했습니다. {syncStatus.message}
+              {' '}우측 상단의 [구글 시트/드라이브 연동 설정]에서 Webhook URL을 확인한 뒤 다시 시도해주세요.
+            </span>
           </div>
         )}
       </div>

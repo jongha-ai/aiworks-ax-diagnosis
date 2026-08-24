@@ -8,7 +8,7 @@ const app = express();
 const PORT = 3000;
 
 const DEFAULT_GOOGLE_SHEET_WEBHOOK_URL =
-  "https://script.google.com/macros/s/AKfycby0qzdlehQQsER8BplqLPiJOZVUzaL4mWEVGIMvaw5jzqAy1iWKM-iF_h32HrmXEZYLlw/exec";
+  "https://script.google.com/macros/s/AKfycbzQRaOmsfwyIyfoLZqZYYYdV1rPETRn1DElToBUSdTK8w76bQMmg3yO-4JuNnSOk0a6JA/exec";
 
 app.use(express.json({ limit: "10mb" }));
 

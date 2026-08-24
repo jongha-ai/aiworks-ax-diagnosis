@@ -94,7 +94,7 @@ export default function App() {
       console.error('Failed to save history', e);
     }
 
-    // Auto sync to Google Sheets Webhook (Direct no-cors) & optional local server
+    // Auto sync to Google Sheets Webhook (with response verification) & optional local server
     try {
       const activeWebhook = getActiveWebhookUrl();
       if (activeWebhook) {
@@ -141,10 +141,14 @@ export default function App() {
 
         fetch(activeWebhook, {
           method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify(webhookPayload),
-        }).catch((err) => console.warn('Direct Google Webhook submit warning:', err));
+          redirect: 'follow',
+        })
+          .then((r) => {
+            if (!r.ok) console.warn('Direct Google Webhook submit failed with status:', r.status);
+          })
+          .catch((err) => console.warn('Direct Google Webhook submit warning:', err));
       }
 
       // Optional local backend DB sync

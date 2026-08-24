@@ -15,7 +15,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { GOOGLE_APPS_SCRIPT_CODE } from "../data/googleAppsScriptTemplate";
-import { DEFAULT_GOOGLE_SHEET_WEBHOOK_URL, getActiveWebhookUrl } from "../constants";
+import { DEFAULT_GOOGLE_SHEET_WEBHOOK_URL, getActiveWebhookUrl, postDiagnosticToWebhook } from "../constants";
 
 interface GoogleSyncModalProps {
   isOpen: boolean;
@@ -76,18 +76,20 @@ export const GoogleSyncModal: React.FC<GoogleSyncModalProps> = ({
     };
 
     try {
-      // Vercel 정적 배포 및 브라우저 환경에서 Google Apps Script Webhook URL로 직접 POST (no-cors)
-      await fetch(cleanUrl, {
-        method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(testPayload),
-      });
+      // Apps Script에 text/plain으로 POST하여 CORS preflight 없이 실제 doPost 응답을 검증
+      const result = await postDiagnosticToWebhook(cleanUrl, testPayload);
 
-      setTestResult({
-        success: true,
-        message: "웹훅 전송 성공! 구글 스프레드시트와 구글 드라이브(AIWORKS_AX_진단결과 폴더)에 테스트 데이터가 정상 추가되었는지 확인해보세요.",
-      });
+      if (result.ok) {
+        setTestResult({
+          success: true,
+          message: `웹훅 전송 성공! 구글 스프레드시트와 구글 드라이브(AIWORKS_AX_진단결과 폴더)에 테스트 데이터가 정상 추가되었는지 확인해보세요. ${result.detail}`,
+        });
+      } else {
+        setTestResult({
+          success: false,
+          message: `웹훅 전송 실패: ${result.detail} URL과 Apps Script 배포 상태를 확인한 뒤 다시 시도해주세요.`,
+        });
+      }
     } catch (err: any) {
       setTestResult({
         success: false,
