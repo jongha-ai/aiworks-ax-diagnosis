@@ -9,3 +9,6 @@ coverage/
 
 # 운영·진단 데이터 (로컬 전용, Git 추적 금지)
 data/diagnostics/
+
+.vercel
+.env*

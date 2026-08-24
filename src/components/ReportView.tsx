@@ -308,9 +308,24 @@ ${result.priorityTasks.task3.title}
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'AI 분석 생성에 실패했습니다.');
+      // 응답이 JSON이 아닌 경우(HTML 에러 페이지 등) 안전하게 처리
+      const rawText = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok || !data) {
+        if (!data) {
+          // HTML/일반 텍스트 응답 = 서버/API 라우팅 오류
+          console.error('AI 분석 API 비정상 응답:', res.status, rawText.slice(0, 200));
+          throw new Error(
+            `AI 분석 서버에 연결할 수 없습니다 (응답 코드 ${res.status}). 잠시 후 다시 시도해주세요.`
+          );
+        }
+        throw new Error(data.error?.message || data.error || 'AI 분석 생성에 실패했습니다.');
       }
       setAiReport(data.analysis);
       if (data.note) {
