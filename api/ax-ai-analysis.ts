@@ -5,7 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 // Vercel 정적 배포에서는 dist/server.cjs가 실행되지 않으므로 이 파일이 API를 담당한다.
 // (req/res 타입은 any로 받아 @vercel/node 개발 의존성 없이 동작)
 
-const candidateModels = ["gemini-2.5-flash", "gemini-flash-latest"];
+const candidateModels = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-flash-latest"];
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
