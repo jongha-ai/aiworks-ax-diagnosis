@@ -326,6 +326,9 @@ ${result.priorityTasks.task3.title}
             `AI 분석 서버에 연결할 수 없습니다 (응답 코드 ${res.status}). 잠시 후 다시 시도해주세요.`
           );
         }
+        if (data.error?.code === 'INVALID_DIAGNOSTIC_DATA') {
+          throw new Error('진단 데이터가 부족해 AI 분석을 생성할 수 없습니다');
+        }
         throw new Error(data.error?.message || data.error || 'AI 분석 생성에 실패했습니다.');
       }
       setAiReport(data.analysis);

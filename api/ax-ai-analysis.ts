@@ -7,12 +7,92 @@ import { GoogleGenAI } from "@google/genai";
 
 const candidateModels = ["gemini-2.5-flash", "gemini-3.7-flash", "gemini-flash-latest"];
 
+const REQUIRED_SCORE_QUESTION_IDS = Array.from({ length: 15 }, (_, index) => `q${index + 4}`);
+const REQUIRED_CATEGORY_SCORE_KEYS = [
+  "aiUsage",
+  "workProcess",
+  "knowledgeManagement",
+  "automation",
+  "verificationSecurity",
+] as const;
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validateDiagnosticData(payload: unknown): string[] {
+  if (!isRecord(payload)) {
+    return ["요청 본문"];
+  }
+
+  const errors: string[] = [];
+  const rawAnswers = payload.rawAnswers;
+  if (!isRecord(rawAnswers)) {
+    return ["rawAnswers"];
+  }
+
+  const answerValues = REQUIRED_SCORE_QUESTION_IDS.map((qid) => Number(rawAnswers[qid]));
+  REQUIRED_SCORE_QUESTION_IDS.forEach((qid, index) => {
+    const value = answerValues[index];
+    if (!Number.isInteger(value) || value < 1 || value > 5) {
+      errors.push(`rawAnswers.${qid}`);
+    }
+  });
+
+  const scores = payload.scores;
+  if (!isRecord(scores)) {
+    errors.push("scores");
+  } else {
+    const totalRawScore = answerValues.reduce((sum, value) => sum + value, 0);
+    const totalScore = Math.round((totalRawScore / 75) * 100);
+
+    if (scores.totalRawScore !== totalRawScore) errors.push("scores.totalRawScore");
+    if (scores.totalScore !== totalScore) errors.push("scores.totalScore");
+    if (!isRecord(scores.level) || !Number.isInteger(scores.level.levelNumber) || scores.level.levelNumber < 1 || scores.level.levelNumber > 5) {
+      errors.push("scores.level.levelNumber");
+    }
+  }
+
+  const categoryScores = payload.categoryScores;
+  if (!isRecord(categoryScores)) {
+    errors.push("categoryScores");
+  } else {
+    const expectedCategoryScores = [
+      Math.round((answerValues.slice(0, 3).reduce((sum, value) => sum + value, 0) / 15) * 100),
+      Math.round((answerValues.slice(3, 6).reduce((sum, value) => sum + value, 0) / 15) * 100),
+      Math.round((answerValues.slice(6, 9).reduce((sum, value) => sum + value, 0) / 15) * 100),
+      Math.round((answerValues.slice(9, 12).reduce((sum, value) => sum + value, 0) / 15) * 100),
+      Math.round((answerValues.slice(12, 15).reduce((sum, value) => sum + value, 0) / 15) * 100),
+    ];
+
+    REQUIRED_CATEGORY_SCORE_KEYS.forEach((key, index) => {
+      if (categoryScores[key] !== expectedCategoryScores[index]) {
+        errors.push(`categoryScores.${key}`);
+      }
+    });
+  }
+
+  return errors;
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
   try {
+    const validationErrors = validateDiagnosticData(req.body);
+    if (validationErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_DIAGNOSTIC_DATA",
+          message: "진단 데이터가 부족하거나 불완전합니다. Q4~Q18의 모든 응답과 점수 정보가 필요합니다.",
+          fields: validationErrors,
+        },
+      });
+    }
+
     const {
       companyName,
       role,
