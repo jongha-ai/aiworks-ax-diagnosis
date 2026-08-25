@@ -421,10 +421,10 @@ ${result.priorityTasks.task3.title}
             id="retest-btn"
             onClick={onRetest}
             className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
-            title="다시 진단하기"
+            title="새 진단 시작"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>재진단</span>
+            <span>새 진단 시작</span>
           </button>
         </div>
       </div>

@@ -15,6 +15,7 @@ interface HeaderProps {
   currentView: 'form' | 'report' | 'interview' | 'feedback' | 'history';
   setCurrentView: (view: 'form' | 'report' | 'interview' | 'feedback' | 'history') => void;
   hasResult: boolean;
+  hasActiveDraft: boolean;
   onReset: () => void;
   onLoadPreset: (presetIndex: number) => void;
   historyCount: number;
@@ -25,6 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentView,
   setCurrentView,
   hasResult,
+  hasActiveDraft,
   onReset,
   onLoadPreset,
   historyCount,
@@ -64,7 +66,10 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <button
               id="nav-form-btn"
-              onClick={() => setCurrentView('form')}
+              onClick={() => {
+                if (hasActiveDraft) setCurrentView('form');
+                else onReset();
+              }}
               className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-[13.5px] font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                 currentView === 'form'
                   ? 'bg-blue-600 text-white shadow-xs'
@@ -149,7 +154,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </nav>
 
-          {/* Quick preset & Reset buttons */}
+          {/* Quick preset & new diagnostic buttons */}
           <div className="flex items-center space-x-1.5 shrink-0 flex-nowrap ml-2 sm:ml-4">
             <div className="hidden xl:flex items-center space-x-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 shrink-0">
               <span className="text-[11px] text-slate-500 font-semibold px-1.5 flex items-center whitespace-nowrap">
@@ -196,10 +201,11 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="header-reset-btn"
               onClick={onReset}
-              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer shrink-0"
-              title="설문 초기화"
+              className="flex items-center space-x-1 px-2 py-1.5 text-xs font-bold text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+              title="새 진단 시작"
             >
               <RotateCcw className="w-4 h-4" />
+              <span className="hidden sm:inline">새 진단</span>
             </button>
           </div>
         </div>

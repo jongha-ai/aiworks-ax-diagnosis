@@ -13,11 +13,14 @@ import { PilotFeedbackModal } from './components/PilotFeedbackModal';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { GoogleSyncModal } from './components/GoogleSyncModal';
 import { calculateDiagnosticResult, SAMPLE_PRESETS } from './utils/axCalculator';
+import {
+  createDiagnosisId,
+  restoreDiagnosticDraft,
+  STORAGE_KEY_DRAFT,
+  STORAGE_KEY_HISTORY,
+} from './utils/diagnosticDraft';
 import { DiagnosticResult, ConsultantInterviewData, PilotFeedbackData } from './types';
 import { getActiveWebhookUrl } from './constants';
-
-const STORAGE_KEY_HISTORY = 'aiworks_ax_diagnostic_history_v01';
-const STORAGE_KEY_DRAFT = 'aiworks_ax_diagnostic_draft_v01';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<'form' | 'report' | 'interview' | 'feedback' | 'history'>('form');
@@ -25,47 +28,71 @@ export default function App() {
   const [evaluatorName, setEvaluatorName] = useState<string>('');
   const [targetEmail, setTargetEmail] = useState<string>('');
   const [isGoogleSyncOpen, setIsGoogleSyncOpen] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, any>>({
-    q1: '대표·임원',
-    q2: '2~5명',
-    q3: '글쓰기·요약 등 일부 업무에 사용한다',
-  });
+  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [diagnosisId, setDiagnosisId] = useState(createDiagnosisId);
+  const [isDraftActive, setIsDraftActive] = useState(true);
+  const [isDraftReady, setIsDraftReady] = useState(false);
 
   const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResult | null>(null);
   const [history, setHistory] = useState<DiagnosticResult[]>([]);
 
-  // Load history & draft on mount
+  // Load history and restore only an active, uncompleted draft on mount.
   useEffect(() => {
     try {
       const savedHistory = localStorage.getItem(STORAGE_KEY_HISTORY);
+      let parsedHistory: DiagnosticResult[] = [];
       if (savedHistory) {
-        setHistory(JSON.parse(savedHistory));
+        const parsed = JSON.parse(savedHistory);
+        if (Array.isArray(parsed)) {
+          parsedHistory = parsed;
+          setHistory(parsedHistory);
+        }
       }
 
       const savedDraft = localStorage.getItem(STORAGE_KEY_DRAFT);
-      if (savedDraft) {
-        const parsed = JSON.parse(savedDraft);
-        if (parsed.answers) setAnswers(parsed.answers);
-        if (parsed.companyName) setCompanyName(parsed.companyName);
-        if (parsed.evaluatorName) setEvaluatorName(parsed.evaluatorName);
-        if (parsed.targetEmail) setTargetEmail(parsed.targetEmail);
+      const restoredDraft = restoreDiagnosticDraft(savedDraft, parsedHistory);
+      if (restoredDraft) {
+        setDiagnosisId(restoredDraft.diagnosisId);
+        setAnswers(restoredDraft.answers);
+        setCompanyName(restoredDraft.companyName);
+        setEvaluatorName(restoredDraft.evaluatorName);
+        setTargetEmail(restoredDraft.targetEmail);
+      } else if (savedDraft) {
+        // Completed or malformed legacy drafts must not reopen as a new form.
+        localStorage.removeItem(STORAGE_KEY_DRAFT);
       }
     } catch (e) {
       console.error('Failed to load local storage draft/history', e);
+    } finally {
+      setIsDraftReady(true);
     }
   }, []);
 
-  // Save draft whenever answers change
+  // Save only the active in-progress draft. A completed diagnosis never recreates it.
   useEffect(() => {
+    if (!isDraftReady) return;
+
     try {
+      if (!isDraftActive) {
+        localStorage.removeItem(STORAGE_KEY_DRAFT);
+        return;
+      }
+
       localStorage.setItem(
         STORAGE_KEY_DRAFT,
-        JSON.stringify({ answers, companyName, evaluatorName, targetEmail })
+        JSON.stringify({
+          schemaVersion: 1,
+          diagnosisId,
+          answers,
+          companyName,
+          evaluatorName,
+          targetEmail,
+        })
       );
     } catch (e) {
       console.error('Failed to save draft', e);
     }
-  }, [answers, companyName, evaluatorName, targetEmail]);
+  }, [answers, companyName, diagnosisId, evaluatorName, isDraftActive, isDraftReady, targetEmail]);
 
   // Answer change handler
   const handleAnswerChange = (questionId: string, value: any) => {
@@ -80,7 +107,7 @@ export default function App() {
     const finalCompanyName = companyName.trim() || '미지정 기업';
     const finalEvaluatorName = evaluatorName.trim() || '대표/담당자';
 
-    const res = calculateDiagnosticResult(answers, finalCompanyName, finalEvaluatorName);
+    const res = calculateDiagnosticResult(answers, finalCompanyName, finalEvaluatorName, diagnosisId);
     res.targetEmail = targetEmail.trim();
     setDiagnosticResult(res);
     setCurrentView('report');
@@ -90,9 +117,17 @@ export default function App() {
     setHistory(updatedHistory);
     try {
       localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(updatedHistory));
+      localStorage.removeItem(STORAGE_KEY_DRAFT);
     } catch (e) {
       console.error('Failed to save history', e);
     }
+
+    // The completed answers remain in the result/history only, never as the next person's draft.
+    setIsDraftActive(false);
+    setAnswers({});
+    setCompanyName('');
+    setEvaluatorName('');
+    setTargetEmail('');
 
     // Auto sync to Google Sheets Webhook (with response verification) & optional local server
     try {
@@ -200,20 +235,28 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Reset form
-  const handleReset = () => {
-    if (window.confirm('설문 응답을 초기화하시겠습니까?')) {
-      setAnswers({
-        q1: '대표·임원',
-        q2: '2~5명',
-        q3: '글쓰기·요약 등 일부 업무에 사용한다',
-      });
-      setCompanyName('');
-      setEvaluatorName('');
-      setDiagnosticResult(null);
-      setCurrentView('form');
-      localStorage.removeItem(STORAGE_KEY_DRAFT);
+  // Start a distinct diagnostic session without touching completed history or external records.
+  const handleStartNewDiagnosis = () => {
+    const hasCurrentDraftData = Object.keys(answers).length > 0 || companyName || evaluatorName || targetEmail;
+    if (isDraftActive && hasCurrentDraftData && !window.confirm('작성 중인 진단을 초기화하고 새 진단을 시작하시겠습니까?')) {
+      return;
     }
+
+    try {
+      localStorage.removeItem(STORAGE_KEY_DRAFT);
+    } catch (e) {
+      console.error('Failed to clear previous draft', e);
+    }
+
+    setDiagnosisId(createDiagnosisId());
+    setAnswers({});
+    setCompanyName('');
+    setEvaluatorName('');
+    setTargetEmail('');
+    setDiagnosticResult(null);
+    setIsDraftActive(true);
+    setCurrentView('form');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Save Consultant Interview
@@ -259,9 +302,6 @@ export default function App() {
   // Select historical report
   const handleSelectHistoryItem = (item: DiagnosticResult) => {
     setDiagnosticResult(item);
-    setCompanyName(item.companyName);
-    setEvaluatorName(item.evaluatorName);
-    setAnswers(item.rawAnswers || {});
     setCurrentView('report');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -296,7 +336,8 @@ export default function App() {
         currentView={currentView}
         setCurrentView={setCurrentView}
         hasResult={diagnosticResult !== null}
-        onReset={handleReset}
+        hasActiveDraft={isDraftActive}
+        onReset={handleStartNewDiagnosis}
         onLoadPreset={handleLoadPreset}
         historyCount={history.length}
         onOpenGoogleSync={() => setIsGoogleSyncOpen(true)}
@@ -325,7 +366,7 @@ export default function App() {
             result={diagnosticResult}
             onOpenInterview={() => setCurrentView('interview')}
             onOpenFeedback={() => setCurrentView('feedback')}
-            onRetest={() => setCurrentView('form')}
+            onRetest={handleStartNewDiagnosis}
             onOpenGoogleSync={() => setIsGoogleSyncOpen(true)}
           />
         )}
