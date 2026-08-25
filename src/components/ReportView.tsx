@@ -304,6 +304,7 @@ ${result.priorityTasks.task3.title}
             q19: result.freeAnswers.q19_timeWaster,
             q20: result.freeAnswers.q20_topPriority,
           },
+          rawAnswers: result.rawAnswers || {},
           consultantInterview: result.consultantInterview,
         }),
       });
